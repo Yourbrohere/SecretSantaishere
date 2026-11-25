@@ -377,7 +377,7 @@ function renderAuth() {
     h('div', { class: 'card stack' }, h('h2', { class: 'center' }, 'Log in or sign up'), seg, mode ? formBox : null,
       (google && mode) ? h('div', { class: 'divider' }, 'or') : null, google,
       google ? h('p', { class: 'small muted center' }, 'Use your own Google account. When you ask to join a group, its admin sees your Google name and email, so nobody can pretend to be someone else.') : null),
-    h('footer', { class: 'foot' }, 'Only you will ever see who you’re buying for. 🤫')));
+    h('footer', { class: 'foot' }, 'Only you will ever see who you’re buying for. 🤫', h('br'), h('a', { href: 'privacy.html' }, 'Privacy & terms'))));
 }
 
 function renderProfileSetup() {
