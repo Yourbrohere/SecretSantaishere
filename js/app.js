@@ -7,7 +7,7 @@
 'use strict';
 
 const CFG = window.SANTA_CONFIG || {};
-const METHODS = Object.assign({ email: true, phone: true, google: true }, CFG.LOGIN_METHODS || {});
+const METHODS = Object.assign({ email: false, phone: false, google: true }, CFG.LOGIN_METHODS || {});
 const OTP_LEN = Number(CFG.OTP_LENGTH) || 6;
 const CONFIGURED = typeof CFG.SUPABASE_URL === 'string' && /^https:\/\//.test(CFG.SUPABASE_URL)
   && !/YOUR-PROJECT/.test(CFG.SUPABASE_URL) && CFG.SUPABASE_KEY && !/YOUR-/.test(CFG.SUPABASE_KEY);
@@ -374,8 +374,9 @@ function renderAuth() {
     h('section', { class: 'hero' }, h('div', { class: 'hero-gift' }, '🎁'), h('h1', null, 'Secret Santa'),
       h('p', null, 'Draw names, share wishlists and keep the magic a secret.')),
     invite,
-    h('div', { class: 'card stack' }, h('h2', { class: 'center' }, 'Log in or sign up'), seg, formBox,
-      (google && mode) ? h('div', { class: 'divider' }, 'or') : null, google),
+    h('div', { class: 'card stack' }, h('h2', { class: 'center' }, 'Log in or sign up'), seg, mode ? formBox : null,
+      (google && mode) ? h('div', { class: 'divider' }, 'or') : null, google,
+      google ? h('p', { class: 'small muted center' }, 'Use your own Google account. When you ask to join a group, its admin sees your Google name and email, so nobody can pretend to be someone else.') : null),
     h('footer', { class: 'foot' }, 'Only you will ever see who you’re buying for. 🤫')));
 }
 
@@ -447,12 +448,19 @@ async function renderHome() {
       return;
     }
     list.replaceChildren(...groups.map((g) => {
+      if (g.pending) {
+        return h('a', { class: 'card group-card', href: `#/join/${g.code}` },
+          h('div', { class: 'row spread' }, h('div', { class: 'gname ellipsis grow' }, g.name), icon('right')),
+          h('div', { class: 'meta' }, h('span', { class: 'chip gold flat' }, '⏳ Waiting for approval'), h('span', { class: 'chip flat' }, `👥 ${g.member_count}`)),
+          h('div', { class: 'small muted' }, 'The admin needs to let you in.'));
+      }
       const cd = countdownText(g.exchange_date);
       const fresh = g.status === 'started' && !store.get(`ss.opened.${g.id}`);
       return h('a', { class: 'card group-card', href: `#/g/${g.id}` },
         h('div', { class: 'row spread' }, h('div', { class: 'gname ellipsis grow' }, g.name), icon('right')),
         h('div', { class: 'meta' }, statusChip(g.status), g.is_admin ? h('span', { class: 'chip gold flat' }, '👑 Admin') : null,
-          h('span', { class: 'chip flat' }, `👥 ${g.member_count}`), g.budget ? h('span', { class: 'chip flat' }, `💸 ${g.budget}`) : null),
+          h('span', { class: 'chip flat' }, `👥 ${g.member_count}`), g.budget ? h('span', { class: 'chip flat' }, `💸 ${g.budget}`) : null,
+          g.requests ? h('span', { class: 'chip red flat' }, `🙋 ${g.requests} waiting`) : null),
         fresh ? h('div', { class: 'banner tint-red card', style: { padding: '10px 14px' } }, h('span', { class: 'emo', style: { fontSize: '22px' } }, '🎁'), h('b', null, 'Tap to see who you got!')) : null,
         cd ? h('div', { class: 'small muted countdown' }, cd) : null);
     }));
@@ -516,15 +524,47 @@ async function renderJoin(code) {
       h('h2', null, p.name), h('p', { class: 'muted' }, p.status === 'lobby' ? 'The admin has closed this group to new players.' : 'This group has already drawn names.'),
       h('button', { class: 'btn block', onclick: back }, 'Back home')));
   }
+  if (p.pending) return renderPending(p, code, header);
   const join = h('button', { class: 'btn red block', onclick: () => busy(join, async () => {
-    const gid = await rpc('join_group', { p_code: code });
-    clear(); toast('You’re in! 🎉', 'ok'); location.replace(`#/g/${gid}`);
-  }) }, 'Join the fun 🎉');
+    const r = await rpc('join_group', { p_code: code });
+    clear();
+    if (r && r.status === 'member') { toast('You’re in! 🎉', 'ok'); location.replace(`#/g/${r.id}`); }
+    else { toast('Request sent! 📨', 'ok'); renderJoin(code); }
+  }) }, p.approval ? 'Ask to join 🙋' : 'Join the fun 🎉');
   mount(header, h('div', { class: 'narrow stack fade-in' }, h('div', { class: 'card tint-gold stack center' },
     h('div', { class: 'hero-gift', style: { margin: '0 auto' } }, '💌'),
     h('p', { class: 'muted' }, 'You’re invited to'), h('h1', null, p.name),
     h('p', null, `${p.members} ${p.members === 1 ? 'player' : 'players'} so far`),
+    p.approval ? h('p', { class: 'small muted' }, `👑 ${p.admin || 'The admin'} will approve you. They’ll see your Google name and email to check it’s really you.`) : null,
+    h('p', { class: 'small' }, 'You’ll join as ', h('b', null, `${S.profile.avatar} ${S.profile.display_name}`), ' · ',
+      h('button', { class: 'link-btn', onclick: openProfile }, 'change')),
     join, h('button', { class: 'btn ghost block', onclick: back }, 'Not now'))));
+}
+
+function renderPending(p, code, header) {
+  store.del('ss.pendingJoin');
+  const cancel = h('button', { class: 'btn danger-text block', onclick: () => busy(cancel, async () => {
+    await rpc('cancel_join_request', { p_code: code }); toast('Request cancelled'); location.hash = '#/';
+  }) }, 'Cancel request');
+  mount(header, h('div', { class: 'narrow stack fade-in' }, h('div', { class: 'card tint-gold waiting' },
+    h('div', { class: 'hat', 'aria-hidden': 'true' }, '⏳'),
+    h('h2', null, 'Request sent!'),
+    h('p', null, 'Waiting for ', h('b', null, `👑 ${p.admin || 'the admin'}`), ' to let you into ', h('b', null, p.name), '.'),
+    h('p', { class: 'small muted' }, 'This page updates by itself, or come back later from your home screen.'),
+    h('button', { class: 'btn block', onclick: () => { location.hash = '#/'; } }, 'Back home'), cancel)));
+  const id = S.renderId;
+  S.timers.push(setInterval(async () => {
+    if (document.hidden || id !== S.renderId) return;
+    let q; try { q = await rpc('group_preview', { p_code: code }); } catch { return; }
+    if (id !== S.renderId || !q) return;
+    if (q.already && q.id) { toast('You’re in! 🎉', 'ok'); location.replace(`#/g/${q.id}`); }
+    else if (!q.pending) {
+      mount(header, h('div', { class: 'narrow card stack center fade-in' }, h('div', { style: { fontSize: '54px' } }, '🙅'),
+        h('h2', null, 'Not approved'), h('p', { class: 'muted' }, `The admin of “${q.name}” didn’t approve this request. If that’s a mistake, ask them and try the link again.`),
+        h('button', { class: 'btn block', onclick: () => { location.hash = '#/'; } }, 'Back home')));
+      S.timers.forEach(clearInterval); S.timers = [];
+    }
+  }, 5000));
 }
 
 /* ---------------- screens: group ---------------- */
@@ -649,7 +689,8 @@ function drawGroup() {
   const short = { giftee: 'Giftee', wishes: 'Wishes' };
   const seg = h('div', { class: `seg${four ? ' four' : ''}`, role: 'tablist' }, tabs.map(([k, label, ic]) =>
     h('button', { role: 'tab', 'aria-selected': String(k === tab), onclick: () => { S.tab[p.gid] = k; drawGroup(); } }, icon(ic), (four && short[k]) || label,
-      k === 'giftee' && (p.unread.santa + p.unread.giftee) > 0 ? h('span', { class: 'dot', 'data-unread-tab': '' }) : null)));
+      k === 'giftee' && (p.unread.santa + p.unread.giftee) > 0 ? h('span', { class: 'dot', 'data-unread-tab': '' }) : null,
+      k === 'admin' && (p.bundle.requests || []).length ? h('span', { class: 'dot' }) : null)));
 
   let content;
   if (tab === 'giftee') content = gifteeTab();
@@ -702,7 +743,8 @@ function openMemberSheet(m) {
   } });
   const body = h('div', { class: 'stack' },
     h('div', { class: 'row' }, h('div', { class: 'avatar lg' }, m.avatar || '🎅'),
-      h('div', { class: 'grow' }, h('h2', null, m.name), h('p', { class: 'small muted' }, 'Player in “' + g.name + '”'))),
+      h('div', { class: 'grow' }, h('h2', null, m.name), h('p', { class: 'small muted' }, 'Player in “' + g.name + '”'),
+        m.account_name || m.account_email ? h('p', { class: 'small muted', style: { wordBreak: 'break-all' } }, '🔐 ', m.account_name || 'Account', m.account_email ? ` · ${m.account_email}` : '') : null)),
     h('label', { class: 'switch card', style: { padding: '14px 16px' } },
       h('span', null, h('b', null, 'Lock wishlist'), h('div', { class: 'small muted' }, 'Stop them adding more items. You can still remove items from the Wishlists tab.')), lock),
     h('label', { class: 'switch card', style: { padding: '14px 16px' } },
@@ -759,11 +801,47 @@ function startButton(g, members) {
   return start;
 }
 
+function requestsCard(g, reqs) {
+  if (!g.is_admin || !reqs || !reqs.length) return null;
+  const firstWord = (x) => String(x || '').trim().split(/\s+/)[0].toLowerCase();
+  return h('div', { class: 'card tint-sky stack fade-in' },
+    h('div', { class: 'card-head', style: { marginBottom: 0 } }, h('h2', null, '🙋 Join requests'), h('span', { class: 'count' }, String(reqs.length))),
+    h('p', { class: 'small muted' }, 'Make sure it’s really them: compare the name they typed with their Google account.'),
+    h('div', { class: 'list' }, reqs.map((r) => {
+      const approve = h('button', { class: 'btn green sm', disabled: g.status !== 'lobby' || r.name_clash, title: r.name_clash ? 'Ask them to change their name first' : null, onclick: () => busy(approve, async () => {
+        await rpc('approve_request', { p_gid: g.id, p_uid: r.user_id }); toast(`${r.name} joined 🎉`, 'ok'); await refreshGroup(true);
+      }) }, icon('check'), 'Approve');
+      const reject = h('button', { class: 'btn sm danger-text', onclick: async () => {
+        if (!await confirmBox({ title: 'Reject request?', text: `${r.name} won’t be added to “${g.name}”.`, ok: 'Reject', danger: true, emoji: '🙅' })) return;
+        try { await rpc('reject_request', { p_gid: g.id, p_uid: r.user_id }); toast('Request rejected'); refreshGroup(true); } catch (e) { toast(e.message, 'error'); }
+      } }, 'Reject');
+      const pic = h('div', { class: 'avatar' }, r.avatar || '🎅');
+      let face = pic;
+      if (r.photo && /^https:\/\//.test(r.photo)) {
+        const img = h('img', { class: 'req-photo', src: r.photo, alt: '', referrerpolicy: 'no-referrer', loading: 'lazy' });
+        img.addEventListener('error', () => img.replaceWith(pic), { once: true });
+        face = img;
+      }
+      const differs = r.account_name && !r.account_name.toLowerCase().includes(firstWord(r.name));
+      return h('div', { class: 'req' },
+        h('div', { class: 'row', style: { alignItems: 'flex-start' } }, face,
+          h('div', { class: 'grow' },
+            h('div', { class: 'name' }, `${r.avatar || ''} ${r.name}`, h('span', { class: 'tiny muted' }, `  ·  ${timeShort(r.at)}`)),
+            h('div', { class: 'small muted', style: { wordBreak: 'break-all' } }, '🔐 ', r.account_name || 'Google account', r.account_email ? ` · ${r.account_email}` : ''),
+            r.name_clash ? h('div', { class: 'tiny warn-line' }, '⚠ Someone in the group already has this name') : null,
+            differs ? h('div', { class: 'tiny warn-line' }, 'ℹ The name they typed is different from their Google name') : null)),
+        h('div', { class: 'row', style: { justifyContent: 'flex-end' } }, reject, approve));
+    })),
+    g.status !== 'lobby' ? h('p', { class: 'tiny muted' }, 'The draw has begun, so nobody new can join. You can only reject these.') : null);
+}
+
 function groupTab() {
   const p = S.page; const { group: g, members } = p.bundle;
   const left = h('div', { class: 'col' });
   const right = h('div', { class: 'col' });
 
+  const reqCard = requestsCard(g, p.bundle.requests);
+  if (reqCard) left.append(reqCard);
   if (g.status === 'starting') left.append(waitingCard(g));
   if (g.status === 'started') {
     left.append(h('div', { class: 'card tint-green stack center' }, h('div', { style: { fontSize: '48px' } }, '🎉'),
@@ -853,9 +931,15 @@ function adminTab() {
         toast(lock.checked ? 'Joining locked 🔒' : 'Joining unlocked 🔓'); refreshGroup(true);
       } catch (e) { lock.checked = !lock.checked; toast(e.message, 'error'); }
     } });
+    const approval = h('input', { type: 'checkbox', checked: g.require_approval !== false, onchange: async () => {
+      try { await rpc('set_require_approval', { p_gid: g.id, p_on: approval.checked });
+        toast(approval.checked ? 'New players need your approval 🙋' : 'Anyone with the link can join'); refreshGroup(true);
+      } catch (e) { approval.checked = !approval.checked; toast(e.message, 'error'); }
+    } });
     left.append(h('div', { class: 'card stack' },
       h('h2', null, '🎟️ Invites'),
       h('div', { class: 'row spread' }, h('span', { class: 'small muted' }, 'Current code'), h('b', { class: 'mono-code' }, g.code)),
+      h('label', { class: 'switch' }, h('span', null, h('b', null, 'Approve new players'), h('div', { class: 'small muted' }, 'New people wait until you approve them. You’ll see their Google name and email.')), approval),
       h('label', { class: 'switch' }, h('span', null, h('b', null, 'Lock joining'), h('div', { class: 'small muted' }, 'Nobody new can join, even with the link')), lock),
       h('button', { class: 'btn block', onclick: async () => {
         if (!await confirmBox({ title: 'New invite code?', emoji: '🔑', ok: 'Make new code',
@@ -864,7 +948,9 @@ function adminTab() {
       } }, icon('key'), 'Make a new invite code')));
   }
 
-  // 4. Players
+  // 4. Join requests + players
+  const reqCard2 = requestsCard(g, p.bundle.requests);
+  if (reqCard2) right.append(reqCard2);
   right.append(h('div', { class: 'card' },
     h('div', { class: 'card-head' }, h('h2', null, '👥 Manage players'), h('span', { class: 'count' }, `${members.length}`)),
     h('p', { class: 'small muted', style: { marginBottom: '12px' } }, 'Tap ⚙️ to lock a wishlist, make someone admin, or remove them.'),
