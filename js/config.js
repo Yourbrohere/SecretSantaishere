@@ -5,7 +5,7 @@
 //  The publishable key is meant to be public — security comes from the database rules.
 // ------------------------------------------------------------
 window.SANTA_CONFIG = {
-  SUPABASE_URL: 'https://piqbgwjaaagmhtpcyiur.supabase.co/rest/v1/',
+  SUPABASE_URL: 'https://piqbgwjaaagmhtpcyiur.supabase.co',
   SUPABASE_KEY: 'sb_publishable_kN1GRBmpUt_RRDwyoIwVTQ_Y-tBzT_t',
 
   // Login options shown on the sign-in screen.
