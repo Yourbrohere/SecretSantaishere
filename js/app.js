@@ -12,8 +12,10 @@ const OTP_LEN = Number(CFG.OTP_LENGTH) || 6;
 const CONFIGURED = typeof CFG.SUPABASE_URL === 'string' && /^https:\/\//.test(CFG.SUPABASE_URL)
   && !/YOUR-PROJECT/.test(CFG.SUPABASE_URL) && CFG.SUPABASE_KEY && !/YOUR-/.test(CFG.SUPABASE_KEY);
 
+// Use only the project address, even if extra bits like /rest/v1/ were pasted.
+const SB_URL = (() => { try { return new URL(String(CFG.SUPABASE_URL).trim()).origin; } catch { return CFG.SUPABASE_URL; } })();
 const sb = CONFIGURED && window.supabase
-  ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY, {
+  ? window.supabase.createClient(SB_URL, String(CFG.SUPABASE_KEY).trim(), {
       auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
     })
   : null;
