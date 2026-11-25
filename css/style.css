@@ -462,3 +462,8 @@ select.input { appearance: none; -webkit-appearance: none; padding-right: 34px; 
 .sys-btn[disabled] { opacity: .6; }
 .sys-btn .spinner { width: 16px; height: 16px; border-radius: 50%; border: 3px solid currentColor; border-right-color: transparent; animation: spin .7s linear infinite; }
 @media (min-width: 640px) { .sys-actions { grid-template-columns: 1fr 1fr; } .sys-actions .sys-btn.danger { grid-column: 1 / -1; } }
+
+/* ---------- v5: join requests ---------- */
+.req { display: grid; gap: 10px; padding: 12px; border-radius: 18px; background: rgba(255, 255, 255, .7); }
+.req-photo { width: 46px; height: 46px; border-radius: 17px; object-fit: cover; flex: none; box-shadow: var(--clay-sm); }
+.warn-line { color: #b4233f; font-weight: 800; margin-top: 2px; }
