@@ -10,7 +10,7 @@ window.SANTA_CONFIG = {
 
   // Login options shown on the sign-in screen.
   // Phone/SMS login is OFF because SMS costs money. Email codes + Google are free.
-  LOGIN_METHODS: { email: true, phone: false, google: true },
+  LOGIN_METHODS: { email: false, phone: false, google: true },
 
   DEFAULT_COUNTRY_CODE: '+91',
   OTP_LENGTH: 6           // must match Supabase → Auth → Email/Phone "OTP length"
